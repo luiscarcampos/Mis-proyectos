@@ -121,13 +121,26 @@ header{padding:1.5rem 2rem 0;border-bottom:1px solid rgba(200,169,110,.3);}
 .tasks-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;}
 .tasks-title{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#aaa;}
 .tasks-count{font-size:.68rem;color:var(--warm);font-weight:600;}
-.task-item{display:flex;align-items:flex-start;gap:.5rem;padding:4px 0;cursor:pointer;}
-.task-cb{width:16px;height:16px;border-radius:4px;border:1.5px solid #ddd;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;transition:all .2s;background:white;}
+.task-item{display:flex;align-items:flex-start;gap:.4rem;padding:3px 2px;border-radius:6px;transition:background .15s;position:relative;}
+.task-item.drag-over{background:rgba(90,110,74,.1);outline:2px dashed var(--moss);}
+.task-item.dragging{opacity:.35;}
+.task-drag{cursor:grab;color:#ccc;font-size:.7rem;flex-shrink:0;margin-top:3px;user-select:none;padding:0 1px;}
+.task-drag:active{cursor:grabbing;}
+.task-cb{width:16px;height:16px;border-radius:4px;border:1.5px solid #ddd;flex-shrink:0;margin-top:3px;display:flex;align-items:center;justify-content:center;transition:all .2s;background:white;cursor:pointer;}
 .task-item.done-task .task-cb{background:var(--moss);border-color:var(--moss);}
 .task-item.done-task .task-cb::after{content:'✓';font-size:.65rem;color:white;font-weight:700;}
-.task-text{font-size:.8rem;color:#555;line-height:1.4;flex:1;}
+.task-body{flex:1;min-width:0;}
+.task-text{font-size:.8rem;color:#555;line-height:1.4;cursor:pointer;word-break:break-word;}
 .task-item.done-task .task-text{text-decoration:line-through;color:#bbb;}
-.task-add-row{display:flex;gap:.4rem;margin-top:.4rem;}
+.task-text-input{width:100%;border:1px solid var(--moss);border-radius:4px;padding:2px 5px;font-family:'DM Sans',sans-serif;font-size:.8rem;color:var(--ink);outline:none;background:white;}
+.task-date-row{display:flex;align-items:center;gap:.3rem;margin-top:1px;}
+.task-date-input{border:none;font-family:'DM Sans',sans-serif;font-size:.62rem;color:var(--warm);background:transparent;outline:none;cursor:pointer;padding:0;width:110px;}
+.task-date-input::-webkit-calendar-picker-indicator{opacity:.5;width:10px;height:10px;}
+.task-actions{display:flex;gap:1px;flex-shrink:0;opacity:0;transition:opacity .15s;margin-top:2px;}
+.task-item:hover .task-actions{opacity:1;}
+.task-act-btn{background:none;border:none;cursor:pointer;font-size:.68rem;padding:1px 3px;border-radius:4px;color:#ccc;line-height:1;}
+.task-act-btn:hover{color:var(--rust);}
+.task-add-row{display:flex;gap:.4rem;margin-top:.5rem;}
 .task-add-input{flex:1;border:1px solid rgba(200,169,110,.3);border-radius:6px;padding:5px 8px;font-family:'DM Sans',sans-serif;font-size:.78rem;background:var(--pale);outline:none;transition:border-color .2s;}
 .task-add-input:focus{border-color:var(--moss);}
 .task-add-btn{background:var(--moss);color:white;border:none;padding:5px 10px;border-radius:6px;font-size:.8rem;cursor:pointer;}
@@ -687,6 +700,25 @@ function renderCard(p){
   const tasks=p.tasks||[];
   const done=tasks.filter(t=>t.done).length;
   const taskXP=done*10;
+  const taskRows=tasks.map(t=>{
+    const dateStr=t.date?`<div class="task-date-row"><input class="task-date-input" type="date" value="${t.date}" onchange="updateTaskDate('${p.id}','${t.id}',this.value)" onclick="event.stopPropagation()"></div>`:`<div class="task-date-row"><input class="task-date-input" type="date" value="" placeholder="sin fecha" onchange="updateTaskDate('${p.id}','${t.id}',this.value)" onclick="event.stopPropagation()"></div>`;
+    return`<div class="task-item ${t.done?'done-task':''}" id="ti-${p.id}-${t.id}" draggable="true"
+      ondragstart="dragStart(event,'${p.id}','${t.id}')"
+      ondragover="dragOver(event,'${p.id}','${t.id}')"
+      ondragleave="dragLeave(event)"
+      ondrop="dragDrop(event,'${p.id}','${t.id}')">
+      <span class="task-drag" title="Arrastrar">⠿</span>
+      <div class="task-cb" onclick="toggleTask('${p.id}','${t.id}',event)"></div>
+      <div class="task-body">
+        <div class="task-text" ondblclick="editTaskInline('${p.id}','${t.id}',event)">${t.text}</div>
+        ${dateStr}
+      </div>
+      <div class="task-actions">
+        <button class="task-act-btn" onclick="editTaskInline('${p.id}','${t.id}',event)" title="Editar">✏️</button>
+        <button class="task-act-btn" onclick="deleteTask('${p.id}','${t.id}',event)" title="Eliminar">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
   return`<div class="card ${p.status}" id="card-${p.id}">
     <div class="card-top">
       <div class="card-icon">${p.icon||'📌'}</div>
@@ -704,9 +736,7 @@ function renderCard(p){
         <span class="tasks-title">Tareas</span>
         <span class="tasks-count">${done}/${tasks.length} · ${taskXP} XP</span>
       </div>
-      ${tasks.map(t=>`<div class="task-item ${t.done?'done-task':''}" onclick="toggleTask('${p.id}','${t.id}',event)">
-        <div class="task-cb"></div><span class="task-text">${t.text}</span>
-      </div>`).join('')}
+      ${taskRows}
       <div class="task-add-row">
         <input class="task-add-input" id="taskinput-${p.id}" placeholder="+ Nueva tarea…" onkeydown="if(event.key==='Enter')addTask('${p.id}')">
         <button class="task-add-btn" onclick="addTask('${p.id}')">+</button>
@@ -747,11 +777,92 @@ function addTask(pid){
   const text=input.value.trim();if(!text)return;
   const p=projects.find(x=>x.id===pid);if(!p)return;
   if(!p.tasks)p.tasks=[];
-  p.tasks.push({id:'t'+Date.now(),text,done:false});
+  p.tasks.push({id:'t'+Date.now(),text,done:false,date:''});
   const c=document.getElementById('card-'+pid);
   if(c)c.outerHTML=renderCard(p);
   scheduleSave();
   setTimeout(()=>{const i=document.getElementById('taskinput-'+pid);if(i)i.focus();},50);
+}
+
+function deleteTask(pid,tid,event){
+  event.stopPropagation();
+  const p=projects.find(x=>x.id===pid);if(!p)return;
+  p.tasks=p.tasks.filter(t=>t.id!==tid);
+  const c=document.getElementById('card-'+pid);
+  if(c)c.outerHTML=renderCard(p);
+  scheduleSave();
+}
+
+function updateTaskDate(pid,tid,val){
+  const p=projects.find(x=>x.id===pid);if(!p)return;
+  const t=(p.tasks||[]).find(x=>x.id===tid);if(!t)return;
+  t.date=val;
+  scheduleSave();
+}
+
+function editTaskInline(pid,tid,event){
+  event.stopPropagation();
+  const p=projects.find(x=>x.id===pid);if(!p)return;
+  const t=(p.tasks||[]).find(x=>x.id===tid);if(!t)return;
+  const textEl=document.querySelector(`#ti-${pid}-${tid} .task-text`);
+  if(!textEl)return;
+  const input=document.createElement('input');
+  input.className='task-text-input';
+  input.value=t.text;
+  textEl.replaceWith(input);
+  input.focus();
+  input.select();
+  const save=()=>{
+    const newText=input.value.trim()||t.text;
+    t.text=newText;
+    const c=document.getElementById('card-'+pid);
+    if(c)c.outerHTML=renderCard(p);
+    scheduleSave();
+  };
+  input.addEventListener('blur',save);
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();save();}
+    if(e.key==='Escape'){const c=document.getElementById('card-'+pid);if(c)c.outerHTML=renderCard(p);}
+  });
+}
+
+/* ── DRAG & DROP ── */
+let dragPid=null,dragTid=null;
+
+function dragStart(event,pid,tid){
+  dragPid=pid;dragTid=tid;
+  event.dataTransfer.effectAllowed='move';
+  setTimeout(()=>{const el=document.getElementById('ti-'+pid+'-'+tid);if(el)el.classList.add('dragging');},0);
+}
+
+function dragOver(event,pid,tid){
+  if(pid!==dragPid)return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect='move';
+  document.querySelectorAll('.task-item.drag-over').forEach(el=>el.classList.remove('drag-over'));
+  const el=document.getElementById('ti-'+pid+'-'+tid);
+  if(el&&tid!==dragTid)el.classList.add('drag-over');
+}
+
+function dragLeave(event){
+  event.currentTarget.classList.remove('drag-over');
+}
+
+function dragDrop(event,pid,tid){
+  event.preventDefault();
+  if(pid!==dragPid||tid===dragTid)return;
+  const p=projects.find(x=>x.id===pid);if(!p)return;
+  const tasks=p.tasks||[];
+  const fromIdx=tasks.findIndex(t=>t.id===dragTid);
+  const toIdx=tasks.findIndex(t=>t.id===tid);
+  if(fromIdx===-1||toIdx===-1)return;
+  const [moved]=tasks.splice(fromIdx,1);
+  tasks.splice(toIdx,0,moved);
+  p.tasks=tasks;
+  const c=document.getElementById('card-'+pid);
+  if(c)c.outerHTML=renderCard(p);
+  scheduleSave();
+  dragPid=null;dragTid=null;
 }
 
 function setFilter(f,btn){
