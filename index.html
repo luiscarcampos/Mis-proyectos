@@ -144,6 +144,11 @@ header{padding:1.5rem 2rem 0;border-bottom:1px solid rgba(200,169,110,.3);}
 .task-add-input{flex:1;border:1px solid rgba(200,169,110,.3);border-radius:6px;padding:5px 8px;font-family:'DM Sans',sans-serif;font-size:.78rem;background:var(--pale);outline:none;transition:border-color .2s;}
 .task-add-input:focus{border-color:var(--moss);}
 .task-add-btn{background:var(--moss);color:white;border:none;padding:5px 10px;border-radius:6px;font-size:.8rem;cursor:pointer;}
+/* ══ PRIORITY ══ */
+.task-priority{font-size:.62rem;cursor:pointer;flex-shrink:0;margin-top:3px;line-height:1;border:none;background:none;padding:1px 3px;border-radius:4px;transition:transform .15s;}
+.task-priority:hover{transform:scale(1.2);}
+.priority-select{border:1px solid rgba(200,169,110,.4);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:.72rem;background:white;color:var(--ink);padding:2px 4px;cursor:pointer;outline:none;}
+.task-add-priority{border:1px solid rgba(200,169,110,.3);border-radius:6px;padding:5px 6px;font-family:'DM Sans',sans-serif;font-size:.75rem;background:var(--pale);outline:none;color:var(--ink);cursor:pointer;}
 .xp-pop{position:absolute;right:1rem;top:.5rem;font-size:.8rem;font-weight:700;color:var(--xp);pointer-events:none;animation:xpPop .9s ease forwards;z-index:50;}
 @keyframes xpPop{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-30px)}}
 .card-footer{display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;}
@@ -683,6 +688,30 @@ function renderAll(){renderProjects();if(currentPage==='calendar')renderCalendar
 ══════════════════════════════════════════ */
 function statusLabel(s){return{active:'Activo',paused:'En pausa',done:'Completo'}[s]||s;}
 
+/* ══ PRIORITY ══ */
+const PRIORITY={
+  'urgent-important':{label:'🔴 Urgente + Importante',order:0},
+  'important':       {label:'🟡 Importante',          order:1},
+  'urgent':          {label:'🟠 Urgente',             order:2},
+  'later':           {label:'⚪ Después',             order:3},
+};
+const PRIORITY_ICON={'urgent-important':'🔴','important':'🟡','urgent':'🟠','later':'⚪'};
+
+function sortTasks(tasks){
+  return [...tasks].sort((a,b)=>{
+    if(a.done!==b.done) return a.done?1:-1;
+    const pa=(PRIORITY[a.priority||'later']||PRIORITY['later']).order;
+    const pb=(PRIORITY[b.priority||'later']||PRIORITY['later']).order;
+    return pa-pb;
+  });
+}
+
+function priorityOptions(selected){
+  return Object.entries(PRIORITY).map(([k,v])=>
+    `<option value="${k}" ${(selected||'later')===k?'selected':''}>${v.label}</option>`
+  ).join('');
+}
+
 function renderProjects(){
   const filtered=currentFilter==='all'?projects:projects.filter(p=>p.status===currentFilter);
   const counts={active:0,paused:0,done:0};
@@ -700,8 +729,11 @@ function renderCard(p){
   const tasks=p.tasks||[];
   const done=tasks.filter(t=>t.done).length;
   const taskXP=done*10;
-  const taskRows=tasks.map(t=>{
-    const dateStr=t.date?`<div class="task-date-row"><input class="task-date-input" type="date" value="${t.date}" onchange="updateTaskDate('${p.id}','${t.id}',this.value)" onclick="event.stopPropagation()"></div>`:`<div class="task-date-row"><input class="task-date-input" type="date" value="" placeholder="sin fecha" onchange="updateTaskDate('${p.id}','${t.id}',this.value)" onclick="event.stopPropagation()"></div>`;
+  const sorted=sortTasks(tasks);
+  const taskRows=sorted.map(t=>{
+    const pri=t.priority||'later';
+    const priIcon=PRIORITY_ICON[pri]||'⚪';
+    const dateStr=`<div class="task-date-row"><input class="task-date-input" type="date" value="${t.date||''}" onchange="updateTaskDate('${p.id}','${t.id}',this.value)" onclick="event.stopPropagation()"></div>`;
     return`<div class="task-item ${t.done?'done-task':''}" id="ti-${p.id}-${t.id}" draggable="true"
       ondragstart="dragStart(event,'${p.id}','${t.id}')"
       ondragover="dragOver(event,'${p.id}','${t.id}')"
@@ -711,7 +743,10 @@ function renderCard(p){
       <div class="task-cb" onclick="toggleTask('${p.id}','${t.id}',event)"></div>
       <div class="task-body">
         <div class="task-text" ondblclick="editTaskInline('${p.id}','${t.id}',event)">${t.text}</div>
-        ${dateStr}
+        <div class="task-date-row" style="gap:.4rem;margin-top:2px;">
+          <select class="priority-select" onclick="event.stopPropagation()" onchange="updateTaskPriority('${p.id}','${t.id}',this.value)">${priorityOptions(pri)}</select>
+          <input class="task-date-input" type="date" value="${t.date||''}" onchange="updateTaskDate('${p.id}','${t.id}',this.value)" onclick="event.stopPropagation()">
+        </div>
       </div>
       <div class="task-actions">
         <button class="task-act-btn" onclick="editTaskInline('${p.id}','${t.id}',event)" title="Editar">✏️</button>
@@ -738,6 +773,7 @@ function renderCard(p){
       </div>
       ${taskRows}
       <div class="task-add-row">
+        <select class="task-add-priority" id="taskpriority-${p.id}" onclick="event.stopPropagation()">${priorityOptions('later')}</select>
         <input class="task-add-input" id="taskinput-${p.id}" placeholder="+ Nueva tarea…" onkeydown="if(event.key==='Enter')addTask('${p.id}')">
         <button class="task-add-btn" onclick="addTask('${p.id}')">+</button>
       </div>
@@ -775,13 +811,25 @@ function toggleTask(pid,tid,event){
 function addTask(pid){
   const input=document.getElementById('taskinput-'+pid);if(!input)return;
   const text=input.value.trim();if(!text)return;
+  const priSel=document.getElementById('taskpriority-'+pid);
+  const priority=priSel?priSel.value:'later';
   const p=projects.find(x=>x.id===pid);if(!p)return;
   if(!p.tasks)p.tasks=[];
-  p.tasks.push({id:'t'+Date.now(),text,done:false,date:''});
+  p.tasks.push({id:'t'+Date.now(),text,done:false,date:'',priority});
   const c=document.getElementById('card-'+pid);
   if(c)c.outerHTML=renderCard(p);
   scheduleSave();
   setTimeout(()=>{const i=document.getElementById('taskinput-'+pid);if(i)i.focus();},50);
+}
+
+function updateTaskPriority(pid,tid,val){
+  event.stopPropagation();
+  const p=projects.find(x=>x.id===pid);if(!p)return;
+  const t=(p.tasks||[]).find(x=>x.id===tid);if(!t)return;
+  t.priority=val;
+  const c=document.getElementById('card-'+pid);
+  if(c)c.outerHTML=renderCard(p);
+  scheduleSave();
 }
 
 function deleteTask(pid,tid,event){
